@@ -1,0 +1,32 @@
+# Dependencies and generated builds
+**/node_modules/
+**/dist/
+**/.expo/
+**/web-build/
+**/coverage/
+**/.claude/
+**/AGENTS.md
+
+# Native/generated files
+**/android/
+**/ios/
+**/.kotlin/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Local databases and secrets
+backend/data/*.db
+backend/data/*.db-*
+**/.env
+**/.env.*
+!**/.env.example
+
+# Tooling and OS noise
+*.log
+*.tsbuildinfo
+.DS_Store
+.idea/
+.vscode/
