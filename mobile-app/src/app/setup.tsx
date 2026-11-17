@@ -1,13 +1,35 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
 import { Card, Eyebrow, Field, PrimaryButton, Screen, Title } from '@/components/ui';
 import { useAppState } from '@/state/AppContext';
 import { colors, radii, spacing } from '@/theme';
+import { joinGroup } from '@/services/api';
 
 export default function SetupScreen() {
-  const { setupMode, setSetupMode, groupName, setGroupName, groupCode, setGroupCode, inviteCode, setInviteCode } = useAppState();
+  const { setupMode, setSetupMode, groupName, setGroupName, groupCode, setGroupCode, inviteCode, setInviteCode, connectBackend } = useAppState();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const isCreate = setupMode === 'create';
   const canContinue = isCreate ? groupName.trim().length > 1 : groupCode.trim().length > 3 && /^\d{4}$/.test(inviteCode);
+
+  const continueSetup = async () => {
+    if (isCreate) {
+      router.push('/members');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const response = await joinGroup({ groupCode: groupCode.trim(), inviteCode });
+      connectBackend(response.data);
+      router.replace('/home');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Join nahi ho saka.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Screen>
@@ -38,13 +60,14 @@ export default function SetupScreen() {
       <Card tone="raised" style={styles.helper}>
         <Text style={styles.helperEmoji}>🧪</Text>
         <View style={styles.helperCopy}>
-          <Text style={styles.helperTitle}>Demo mode on hai</Text>
-          <Text style={styles.helperText}>Koi backend nahi. Jo bhi karo ge, sirf iss prototype mein local rahega.</Text>
+          <Text style={styles.helperTitle}>Backend connected mode</Text>
+          <Text style={styles.helperText}>Create ya join ke baad voice entries secure member session ke saath save hongi.</Text>
         </View>
       </Card>
 
       <View style={styles.action}>
-        <PrimaryButton label={isCreate ? 'Log add karo  →' : 'Group join karo  →'} disabled={!canContinue} onPress={() => router.push('/members')} />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <PrimaryButton label={loading ? 'Connect ho raha hai…' : isCreate ? 'Log add karo  →' : 'Group join karo  →'} disabled={!canContinue || loading} onPress={() => void continueSetup()} />
       </View>
     </Screen>
   );
@@ -66,4 +89,5 @@ const styles = StyleSheet.create({
   helperTitle: { color: colors.white, fontWeight: '900', fontSize: 15 },
   helperText: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   action: { marginTop: 'auto', paddingTop: spacing.xxl },
+  error: { color: colors.danger, fontSize: 13, lineHeight: 19, marginBottom: spacing.sm },
 });

@@ -7,6 +7,10 @@ const app = await buildApp({
   jwtSecret: env.JWT_SECRET,
   corsOrigin: env.CORS_ORIGIN,
   logger: { level: env.LOG_LEVEL },
+  ...(env.OPENAI_API_KEY ? { openAIApiKey: env.OPENAI_API_KEY } : {}),
+  transcriptionModel: env.OPENAI_TRANSCRIPTION_MODEL,
+  parserModel: env.OPENAI_PARSER_MODEL,
+  maxVoiceFileBytes: env.MAX_VOICE_FILE_BYTES,
 });
 
 const shutdown = async (signal: string) => {

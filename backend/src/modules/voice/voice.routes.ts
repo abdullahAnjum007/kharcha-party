@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { forbidden } from '../../lib/errors.js';
+import { AppError, forbidden } from '../../lib/errors.js';
 import type { Services } from '../routes.types.js';
 
 const groupParamsSchema = z.object({ groupId: z.string().uuid() });
+const draftParamsSchema = groupParamsSchema.extend({ draftId: z.string().uuid() });
 const voiceSchema = z.object({
   transcript: z.string().trim().min(2).max(500),
   splitAmongMemberIds: z.array(z.string().uuid()).min(1).max(50).optional(),
@@ -14,6 +15,38 @@ function assertTokenGroup(request: FastifyRequest, groupId: string) {
 }
 
 export async function registerVoiceRoutes(app: FastifyInstance, services: Services) {
+  app.get('/api/v1/groups/:groupId/voice-drafts', { preHandler: app.authenticate }, async (request) => {
+    const { groupId } = groupParamsSchema.parse(request.params);
+    assertTokenGroup(request, groupId);
+    return { data: { voiceDrafts: services.voiceDrafts.list(groupId) } };
+  });
+
+  app.post('/api/v1/groups/:groupId/voice-drafts', { preHandler: app.authenticate }, async (request, reply) => {
+    const { groupId } = groupParamsSchema.parse(request.params);
+    assertTokenGroup(request, groupId);
+    const file = await request.file();
+    if (!file) throw new AppError(400, 'AUDIO_REQUIRED', 'Audio file required hai.');
+    if (!file.mimetype.startsWith('audio/')) throw new AppError(415, 'INVALID_AUDIO_TYPE', 'Sirf audio file upload karein.');
+    const voiceDraft = await services.voiceDrafts.create(groupId, request.user.memberId, {
+      buffer: await file.toBuffer(),
+      filename: file.filename || 'expense.m4a',
+      mimeType: file.mimetype,
+    });
+    return reply.code(201).send({ data: { voiceDraft } });
+  });
+
+  app.post('/api/v1/groups/:groupId/voice-drafts/:draftId/accept', { preHandler: app.authenticate }, async (request) => {
+    const { groupId, draftId } = draftParamsSchema.parse(request.params);
+    assertTokenGroup(request, groupId);
+    return { data: services.voiceDrafts.accept(groupId, request.user.memberId, draftId) };
+  });
+
+  app.post('/api/v1/groups/:groupId/voice-drafts/:draftId/deny', { preHandler: app.authenticate }, async (request) => {
+    const { groupId, draftId } = draftParamsSchema.parse(request.params);
+    assertTokenGroup(request, groupId);
+    return { data: { voiceDraft: services.voiceDrafts.deny(groupId, request.user.memberId, draftId) } };
+  });
+
   app.get('/api/v1/groups/:groupId/voice-logs', { preHandler: app.authenticate }, async (request) => {
     const { groupId } = groupParamsSchema.parse(request.params);
     assertTokenGroup(request, groupId);
@@ -28,5 +61,3 @@ export async function registerVoiceRoutes(app: FastifyInstance, services: Servic
     return reply.code(201).send({ data: result });
   });
 }
-
-// Future integration point: upload audio, call a speech-to-text provider, then pass its transcript to the service above.

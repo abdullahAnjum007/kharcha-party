@@ -1,12 +1,33 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
 import { Card, Eyebrow, Field, PrimaryButton, Screen, Title } from '@/components/ui';
 import { useAppState } from '@/state/AppContext';
 import { colors, radii, spacing } from '@/theme';
+import { createGroup } from '@/services/api';
 
 export default function MembersScreen() {
-  const { members, memberCodes, setMemberCount, updateMember } = useAppState();
+  const { groupName, members, memberCodes, setMemberCount, updateMember, connectBackend } = useAppState();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const allNamed = members.every((name) => name.trim().length > 0);
+
+  const saveGroup = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const creatorIndex = members.length > 1 ? 1 : 0;
+      const creatorName = members[creatorIndex]!.trim();
+      const memberNames = members.filter((_, index) => index !== creatorIndex).map((name) => name.trim());
+      const response = await createGroup({ name: groupName.trim(), creatorName, memberNames });
+      connectBackend(response.data);
+      router.push('/vote');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Group create nahi ho saka.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Screen>
@@ -50,7 +71,8 @@ export default function MembersScreen() {
         ))}
       </View>
 
-      <PrimaryButton label="Voting shuru karo  🗳️" disabled={!allNamed} onPress={() => router.push('/vote')} />
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      <PrimaryButton label={loading ? 'Group ban raha hai…' : 'Voting shuru karo  🗳️'} disabled={!allNamed || loading} onPress={() => void saveGroup()} />
     </Screen>
   );
 }
@@ -74,4 +96,5 @@ const styles = StyleSheet.create({
   codeLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 0.6, textAlign: 'center' },
   codePill: { minHeight: 56, borderRadius: radii.medium, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
   codeText: { color: colors.background, fontSize: 18, fontWeight: '900', letterSpacing: 2 },
+  error: { color: colors.danger, fontSize: 13, lineHeight: 19 },
 });

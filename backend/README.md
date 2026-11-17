@@ -10,6 +10,8 @@ npm install
 npm run dev
 ```
 
+Real voice transcription requires `OPENAI_API_KEY` in `.env`. The transcription and parser models are configurable through `OPENAI_TRANSCRIPTION_MODEL` and `OPENAI_PARSER_MODEL`.
+
 The API runs at `http://localhost:4000`. Check it with:
 
 ```bash
@@ -57,6 +59,9 @@ curl http://localhost:4000/api/v1/groups/GROUP_ID/dashboard \
 | `GET/POST` | `/api/v1/groups/:groupId/expenses` | List or submit expenses |
 | `PATCH` | `/api/v1/groups/:groupId/expenses/:expenseId/status` | Leader approves/rejects an expense |
 | `GET/POST` | `/api/v1/groups/:groupId/voice-logs` | List or parse transcribed voice entries |
+| `GET/POST` | `/api/v1/groups/:groupId/voice-drafts` | List drafts or upload multipart audio for AI parsing |
+| `POST` | `/api/v1/groups/:groupId/voice-drafts/:draftId/accept` | Confirm draft and create the expense |
+| `POST` | `/api/v1/groups/:groupId/voice-drafts/:draftId/deny` | Discard the draft without an expense |
 | `GET` | `/api/v1/groups/:groupId/dashboard` | Aggregated dynamic dashboard |
 | `GET` | `/api/v1/groups/:groupId/settlements` | Calculated minimal payments |
 | `WS` | `/api/v1/groups/:groupId/events?token=...` | Realtime group updates |
@@ -64,6 +69,18 @@ curl http://localhost:4000/api/v1/groups/GROUP_ID/dashboard \
 Invitation codes are never stored as plaintext: the database keeps a group-scoped HMAC hash. Plain 4-digit codes are returned only when members are created or a leader resets a code. Login attempts are rate-limited.
 
 All money is stored as integer PKR. A leader-created expense is approved immediately; a traveller-created expense remains pending until the leader approves it. Settlement calculations use approved expense splits only.
+
+## Voice review flow
+
+Upload an audio file as multipart form data:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/groups/GROUP_ID/voice-drafts \
+  -H 'Authorization: Bearer YOUR_TOKEN' \
+  -F 'audio=@expense.m4a;type=audio/mp4'
+```
+
+The server transcribes the audio, extracts a title, category, and integer PKR amount, then returns a `PENDING_REVIEW` draft. No expense exists until the member calls the `accept` route. Calling `deny` records the decision but creates no expense. Audio is processed in memory and is not persisted by this prototype.
 
 ## Commands
 
@@ -80,7 +97,8 @@ npm run check
 - `src/app.ts` — application composition, plugins, errors, lifecycle
 - `src/db/` — SQLite schema and repository boundary
 - `src/modules/groups/` — groups, members, voting, and budgets
-- `src/modules/expenses/` — expenses, approval flow, and voice parsing
+- `src/modules/expenses/` — expenses and approval flow
+- `src/modules/voice/` — audio upload, OpenAI integration, and review drafts
 - `src/modules/settlements/` — balance and minimum-payment calculation
 - `src/modules/realtime/` — authenticated WebSocket updates
 

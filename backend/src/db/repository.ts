@@ -48,6 +48,20 @@ export type VoiceLogRow = {
   created_at: string;
 };
 
+export type VoiceDraftRow = {
+  id: string;
+  group_id: string;
+  member_id: string;
+  transcript: string;
+  title: string;
+  category: string;
+  amount: number;
+  status: 'PENDING_REVIEW' | 'ACCEPTED' | 'DENIED';
+  expense_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export class KharchaRepository {
   constructor(private readonly database: Database) {}
 
@@ -209,6 +223,32 @@ export class KharchaRepository {
 
   listVoiceLogs(groupId: string): VoiceLogRow[] {
     return this.database.raw.prepare('SELECT * FROM voice_logs WHERE group_id = ? ORDER BY created_at DESC').all(groupId) as VoiceLogRow[];
+  }
+
+  insertVoiceDraft(draft: VoiceDraftRow) {
+    this.database.raw.prepare(`
+      INSERT INTO voice_drafts (
+        id, group_id, member_id, transcript, title, category, amount,
+        status, expense_id, created_at, updated_at
+      ) VALUES (
+        @id, @group_id, @member_id, @transcript, @title, @category, @amount,
+        @status, @expense_id, @created_at, @updated_at
+      )
+    `).run(draft);
+  }
+
+  getVoiceDraft(id: string): VoiceDraftRow | undefined {
+    return this.database.raw.prepare('SELECT * FROM voice_drafts WHERE id = ?').get(id) as VoiceDraftRow | undefined;
+  }
+
+  listVoiceDrafts(groupId: string): VoiceDraftRow[] {
+    return this.database.raw.prepare('SELECT * FROM voice_drafts WHERE group_id = ? ORDER BY created_at DESC').all(groupId) as VoiceDraftRow[];
+  }
+
+  setVoiceDraftStatus(id: string, status: VoiceDraftRow['status'], expenseId: string | null, updatedAt: string) {
+    this.database.raw.prepare(`
+      UPDATE voice_drafts SET status = ?, expense_id = ?, updated_at = ? WHERE id = ?
+    `).run(status, expenseId, updatedAt, id);
   }
 
   approvedAccounting(groupId: string): {

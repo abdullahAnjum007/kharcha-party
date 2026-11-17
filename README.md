@@ -28,7 +28,7 @@ Four friends go on a trip. Ali pays for dinner. Sara books the hotel. You fill t
 - 🗳️ Elect a trip leader — ties trigger a revote, because dosti bachani hai boss
 - 🎯 Propose and lock per-person budgets
 - 🔐 Login with a shared group ID plus a personal 4-digit invitation code
-- 🎙️ Turn transcripts such as `Hotel 12000 sab ke liye` into expense records
+- 🎙️ Record real audio, transcribe Roman Urdu/Hinglish with AI, then review before saving
 - ✅ Let the leader approve traveller expense requests
 - 📊 View the full sheet, activity, balances, and budget progress
 - ✌️ Calculate the smallest set of settlement payments
@@ -97,7 +97,8 @@ kharcha-party/
 ├── backend/                    # Fastify + TypeScript API
 │   ├── src/db/                 # SQLite schema + repository boundary
 │   ├── src/modules/groups/     # Members, voting, invite codes, budgets
-│   ├── src/modules/expenses/   # Expenses, approval, voice parsing
+│   ├── src/modules/expenses/   # Expenses and approval
+│   ├── src/modules/voice/      # Audio transcription, AI parsing, review drafts
 │   ├── src/modules/realtime/   # Authenticated WebSocket events
 │   ├── src/modules/settlements/ # Balance and payment calculation
 │   └── test/                   # End-to-end API flow tests
@@ -106,8 +107,7 @@ kharcha-party/
 
 The backend keeps HTTP, domain, and persistence concerns separate. SQLite makes local setup instant; the repository boundary provides a clear migration path to managed PostgreSQL when horizontal scaling is needed.
 
-> [!NOTE]
-> The mobile interface currently runs as a polished local-data prototype. The dynamic backend is complete and independently runnable; wiring the mobile state layer to these APIs is the next integration milestone.
+The create/join and voice-entry paths are connected end-to-end. Remaining dashboard data is still seeded locally while those screens are migrated incrementally.
 
 ## 🚀 Run it locally
 
@@ -126,6 +126,12 @@ npm install
 npm run dev
 ```
 
+Add your OpenAI key to `backend/.env` to enable real transcription:
+
+```dotenv
+OPENAI_API_KEY=your_key_here
+```
+
 The API starts at `http://localhost:4000`.
 
 ```bash
@@ -138,9 +144,12 @@ Open a second terminal:
 
 ```bash
 cd mobile-app
+cp .env.example .env
 npm install
 npm run android
 ```
+
+The default Android-emulator API URL is `http://10.0.2.2:4000`. For a physical phone, set `EXPO_PUBLIC_API_URL` to your computer's LAN address, for example `http://192.168.1.20:4000`.
 
 For a quick browser preview:
 
@@ -190,7 +199,7 @@ cd backend
 npm run check
 ```
 
-`npm run check` runs strict TypeScript, type-aware ESLint, end-to-end API tests, and a production build. The tested flow covers group creation, invitation login, voting, budget locking, traveller requests, leader approval, voice parsing, dashboard totals, code rotation, and settlements.
+`npm run check` runs strict TypeScript, type-aware ESLint, end-to-end API tests, and a production build. The tested flow covers group creation, invitation login, voting, budget locking, traveller requests, leader approval, voice draft accept/deny, dashboard totals, code rotation, and settlements.
 
 ## 🛡️ Backend guardrails
 
@@ -211,8 +220,9 @@ npm run check
 - [x] Personal invitation-code login
 - [x] Expense approval and settlement engine
 - [x] Realtime WebSocket event channel
-- [ ] Connect mobile screens to the API client
-- [ ] Add real microphone capture and speech-to-text provider
+- [x] Connect create/join and voice screens to the API client
+- [x] Add real microphone capture, AI transcription, and accept/deny review
+- [ ] Migrate dashboard, voting, and budget UI from local state to live API data
 - [ ] Move production persistence to PostgreSQL
 - [ ] Add push notifications and payment deep links
 

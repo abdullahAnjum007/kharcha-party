@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
+import multipart from '@fastify/multipart';
 import { ZodError } from 'zod';
 import { Database } from './db/database.js';
 import { KharchaRepository } from './db/repository.js';
@@ -18,12 +19,19 @@ import { registerRealtimeRoutes } from './modules/realtime/realtime.routes.js';
 import type { Services } from './modules/routes.types.js';
 import { SettlementService } from './modules/settlements/settlement.service.js';
 import { registerVoiceRoutes } from './modules/voice/voice.routes.js';
+import { VoiceDraftService } from './modules/voice/voice-draft.service.js';
+import { OpenAIVoiceAI, UnavailableVoiceAI, type VoiceAI } from './modules/voice/voice-ai.js';
 
 export type BuildAppOptions = {
   databasePath?: string;
   jwtSecret?: string;
   corsOrigin?: string;
   logger?: FastifyServerOptions['logger'];
+  openAIApiKey?: string;
+  transcriptionModel?: string;
+  parserModel?: string;
+  maxVoiceFileBytes?: number;
+  voiceAI?: VoiceAI;
 };
 
 export async function buildApp(options: BuildAppOptions = {}) {
@@ -39,7 +47,15 @@ export async function buildApp(options: BuildAppOptions = {}) {
   const groups = new GroupService(repository, events, tokenSecret);
   const expenses = new ExpenseService(repository, groups, events);
   const settlements = new SettlementService(repository, groups);
-  const services: Services = { repository, events, groups, expenses, settlements };
+  const voiceAI = options.voiceAI ?? (options.openAIApiKey
+    ? new OpenAIVoiceAI({
+      apiKey: options.openAIApiKey,
+      transcriptionModel: options.transcriptionModel ?? 'gpt-transcribe',
+      parserModel: options.parserModel ?? 'gpt-6-luna',
+    })
+    : new UnavailableVoiceAI());
+  const voiceDrafts = new VoiceDraftService(repository, groups, expenses, events, voiceAI);
+  const services: Services = { repository, events, groups, expenses, settlements, voiceDrafts };
 
   await app.register(cors, {
     origin: options.corsOrigin === '*' || !options.corsOrigin
@@ -51,6 +67,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(rateLimit, { max: 200, timeWindow: '1 minute' });
   await app.register(jwt, { secret: tokenSecret });
   await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
+  await app.register(multipart, {
+    limits: { files: 1, fileSize: options.maxVoiceFileBytes ?? 10_000_000, fields: 2 },
+  });
 
   app.decorate('authenticate', async function authenticate(request) {
     await request.jwtVerify();
@@ -78,6 +97,14 @@ export async function buildApp(options: BuildAppOptions = {}) {
     if (statusCode === 401) {
       return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'Valid member token required hai.', requestId: request.id } });
     }
+    if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500) {
+      const message = typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string'
+        ? error.message
+        : 'Request process nahi ho saki.';
+      return reply.code(statusCode).send({
+        error: { code: 'REQUEST_ERROR', message, requestId: request.id },
+      });
+    }
     request.log.error(error);
     return reply.code(500).send({ error: { code: 'INTERNAL_ERROR', message: 'Server se scene off ho gaya. Dobara try karein.', requestId: request.id } });
   });
@@ -93,6 +120,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
       dashboard: 'GET /api/v1/groups/:groupId/dashboard',
       expenses: '/api/v1/groups/:groupId/expenses',
       voiceLogs: '/api/v1/groups/:groupId/voice-logs',
+      voiceDrafts: '/api/v1/groups/:groupId/voice-drafts',
       settlements: 'GET /api/v1/groups/:groupId/settlements',
       realtime: 'WS /api/v1/groups/:groupId/events?token=...',
     },

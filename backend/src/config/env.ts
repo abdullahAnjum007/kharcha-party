@@ -9,6 +9,10 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32).default('development-only-secret-change-me-now'),
   CORS_ORIGIN: z.string().default('*'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENAI_TRANSCRIPTION_MODEL: z.string().min(1).default('gpt-transcribe'),
+  OPENAI_PARSER_MODEL: z.string().min(1).default('gpt-6-luna'),
+  MAX_VOICE_FILE_BYTES: z.coerce.number().int().positive().default(10_000_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

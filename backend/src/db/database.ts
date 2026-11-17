@@ -110,6 +110,24 @@ export class Database {
         FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE SET NULL
       );
       CREATE INDEX IF NOT EXISTS idx_voice_logs_group ON voice_logs(group_id, created_at DESC);
+
+      CREATE TABLE IF NOT EXISTS voice_drafts (
+        id TEXT PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        member_id TEXT NOT NULL,
+        transcript TEXT NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL,
+        amount INTEGER NOT NULL CHECK(amount > 0),
+        status TEXT NOT NULL CHECK(status IN ('PENDING_REVIEW', 'ACCEPTED', 'DENIED')),
+        expense_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+        FOREIGN KEY (member_id) REFERENCES members(id),
+        FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_voice_drafts_group ON voice_drafts(group_id, created_at DESC);
     `);
 
     const memberColumns = this.raw.pragma('table_info(members)') as Array<{ name: string }>;

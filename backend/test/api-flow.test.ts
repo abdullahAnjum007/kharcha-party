@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildApp } from '../src/app.js';
+import type { VoiceAI } from '../src/modules/voice/voice-ai.js';
 
 type Member = { id: string; name: string; joined: boolean; inviteCode?: string };
 type Group = {
@@ -12,11 +13,28 @@ type Group = {
 };
 type Expense = { id: string; status: string; amount: number; source: string };
 
+const fakeVoiceAI: VoiceAI = {
+  async transcribeAndExtract() {
+    return { transcript: 'Ali ne dinner ke 8200 diye', title: 'Dinner scene', category: 'Food', amount: 8_200 };
+  },
+};
+
+function audioMultipart() {
+  const boundary = '----kharcha-party-test-boundary';
+  const payload = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="audio"; filename="expense.m4a"\r\nContent-Type: audio/mp4\r\n\r\n`),
+    Buffer.from('fake-audio-for-provider'),
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  return { payload, contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
 void test('complete group, budget, expense, voice, and settlement flow', async (context) => {
   const app = await buildApp({
     databasePath: ':memory:',
     jwtSecret: 'test-secret-that-is-long-enough-for-jwt',
     logger: false,
+    voiceAI: fakeVoiceAI,
   });
   context.after(async () => app.close());
 
@@ -138,6 +156,46 @@ void test('complete group, budget, expense, voice, and settlement flow', async (
   assert.equal(voiceData.data.expense.source, 'VOICE');
   assert.equal(voiceData.data.expense.status, 'APPROVED');
 
+  const audio = audioMultipart();
+  const draftResponse = await app.inject({
+    method: 'POST',
+    url: `/api/v1/groups/${created.data.group.id}/voice-drafts`,
+    headers: { ...aliAuth, 'content-type': audio.contentType },
+    payload: audio.payload,
+  });
+  assert.equal(draftResponse.statusCode, 201);
+  const draft = draftResponse.json<{ data: { voiceDraft: { id: string; transcript: string; amount: number; status: string } } }>().data.voiceDraft;
+  assert.equal(draft.transcript, 'Ali ne dinner ke 8200 diye');
+  assert.equal(draft.amount, 8_200);
+  assert.equal(draft.status, 'PENDING_REVIEW');
+
+  const acceptDraftResponse = await app.inject({
+    method: 'POST',
+    url: `/api/v1/groups/${created.data.group.id}/voice-drafts/${draft.id}/accept`,
+    headers: aliAuth,
+  });
+  assert.equal(acceptDraftResponse.statusCode, 200);
+  const acceptedDraft = acceptDraftResponse.json<{ data: { voiceDraft: { status: string }; expense: Expense } }>().data;
+  assert.equal(acceptedDraft.voiceDraft.status, 'ACCEPTED');
+  assert.equal(acceptedDraft.expense.amount, 8_200);
+  assert.equal(acceptedDraft.expense.source, 'VOICE');
+
+  const deniedAudio = audioMultipart();
+  const deniedDraftResponse = await app.inject({
+    method: 'POST',
+    url: `/api/v1/groups/${created.data.group.id}/voice-drafts`,
+    headers: { ...aliAuth, 'content-type': deniedAudio.contentType },
+    payload: deniedAudio.payload,
+  });
+  const deniedDraft = deniedDraftResponse.json<{ data: { voiceDraft: { id: string } } }>().data.voiceDraft;
+  const denyResponse = await app.inject({
+    method: 'POST',
+    url: `/api/v1/groups/${created.data.group.id}/voice-drafts/${deniedDraft.id}/deny`,
+    headers: aliAuth,
+  });
+  assert.equal(denyResponse.statusCode, 200);
+  assert.equal(denyResponse.json<{ data: { voiceDraft: { status: string } } }>().data.voiceDraft.status, 'DENIED');
+
   const dashboardResponse = await app.inject({
     method: 'GET',
     url: `/api/v1/groups/${created.data.group.id}/dashboard`,
@@ -152,9 +210,9 @@ void test('complete group, budget, expense, voice, and settlement flow', async (
     };
   }>();
   assert.equal(dashboard.data.currentMember.role, 'LEADER');
-  assert.equal(dashboard.data.spending.approved, 20_200);
+  assert.equal(dashboard.data.spending.approved, 28_400);
   assert.equal(dashboard.data.spending.groupBudget, 50_000);
-  assert.equal(dashboard.data.spending.remaining, 29_800);
+  assert.equal(dashboard.data.spending.remaining, 21_600);
   assert.ok(dashboard.data.settlement.payments.length > 0);
 
   const unauthorizedApproval = await app.inject({

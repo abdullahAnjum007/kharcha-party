@@ -19,11 +19,13 @@
     "@fastify/cors": "^11.4.3",
     "@fastify/helmet": "^13.2.0",
     "@fastify/jwt": "^10.2.7",
+    "@fastify/multipart": "^10.1.9",
     "@fastify/rate-limit": "^11.2.2",
     "@fastify/websocket": "^11.3.7",
     "better-sqlite3": "^13.2.0",
     "dotenv": "^18.0.10",
     "fastify": "^5.12.8",
+    "openai": "^7.57.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
