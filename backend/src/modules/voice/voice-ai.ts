@@ -35,6 +35,7 @@ type OpenAIVoiceAIOptions = {
   apiKey: string;
   transcriptionModel: string;
   parserModel: string;
+  logPayloads: boolean;
 };
 
 export class OpenAIVoiceAI implements VoiceAI {
@@ -46,16 +47,28 @@ export class OpenAIVoiceAI implements VoiceAI {
 
   async transcribeAndExtract(audio: VoiceAudio, context: VoiceContext): Promise<VoiceExpenseExtraction> {
     try {
-      console.info('[voice-ai] transcription started', { filename: audio.filename, mimeType: audio.mimeType, bytes: audio.buffer.length });
+      if (this.options.logPayloads) console.info('[voice-ai] transcription request', {
+        model: this.options.transcriptionModel,
+        filename: audio.filename,
+        mimeType: audio.mimeType,
+        bytes: audio.buffer.length,
+        prompt: 'Roman Urdu, Urdu aur Hinglish trip expense',
+      });
       const transcription = await this.client.audio.transcriptions.create({
         file: await toFile(audio.buffer, audio.filename, { type: audio.mimeType }),
         model: this.options.transcriptionModel,
         prompt: 'Roman Urdu, Urdu aur Hinglish trip expense. Names aur PKR amounts bilkul sahi likho.',
       });
       const transcript = transcription.text.trim();
-      console.info('[voice-ai] transcription completed', { characters: transcript.length });
+      if (this.options.logPayloads) console.info('[voice-ai] transcription response', { transcript, characters: transcript.length });
       if (!transcript) throw new AppError(422, 'VOICE_NOT_UNDERSTOOD', 'Audio mein koi clear baat samajh nahi aayi. Dobara bol kar try karein.');
 
+      if (this.options.logPayloads) console.info('[voice-ai] extraction request', {
+        model: this.options.parserModel,
+        transcript,
+        currentMemberName: context.currentMemberName,
+        memberNames: context.memberNames,
+      });
       const response = await this.client.responses.parse({
         model: this.options.parserModel,
         input: [
@@ -68,7 +81,7 @@ export class OpenAIVoiceAI implements VoiceAI {
         text: { format: zodTextFormat(extractedExpenseSchema, 'expense_draft') },
       });
       const parsed = response.output_parsed;
-      console.info('[voice-ai] expense extraction completed', { hasResult: Boolean(parsed), isExpense: parsed?.isExpense ?? false });
+      if (this.options.logPayloads) console.info('[voice-ai] extraction response', { parsed });
       if (!parsed?.isExpense) {
         throw new AppError(422, 'VOICE_NOT_UNDERSTOOD', 'Kharcha clear nahi tha. Misal: “Dinner ke 8200 maine diye”.');
       }

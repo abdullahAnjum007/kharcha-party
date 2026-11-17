@@ -7,6 +7,7 @@ const app = await buildApp({
   jwtSecret: env.JWT_SECRET,
   corsOrigin: env.CORS_ORIGIN,
   logger: { level: env.LOG_LEVEL },
+  logApiPayloads: env.LOG_API_PAYLOADS,
   ...(env.OPENAI_API_KEY ? { openAIApiKey: env.OPENAI_API_KEY } : {}),
   transcriptionModel: env.OPENAI_TRANSCRIPTION_MODEL,
   parserModel: env.OPENAI_PARSER_MODEL,

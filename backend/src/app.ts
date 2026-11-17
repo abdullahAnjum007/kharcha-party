@@ -10,6 +10,7 @@ import { Database } from './db/database.js';
 import { KharchaRepository } from './db/repository.js';
 import { AppError } from './lib/errors.js';
 import { EventHub } from './lib/event-hub.js';
+import { sanitizeForLog, sanitizeResponsePayload } from './lib/safe-log.js';
 import { registerDashboardRoutes } from './modules/dashboard/dashboard.routes.js';
 import { registerExpenseRoutes } from './modules/expenses/expense.routes.js';
 import { ExpenseService } from './modules/expenses/expense.service.js';
@@ -32,6 +33,7 @@ export type BuildAppOptions = {
   parserModel?: string;
   maxVoiceFileBytes?: number;
   voiceAI?: VoiceAI;
+  logApiPayloads?: boolean;
 };
 
 export async function buildApp(options: BuildAppOptions = {}) {
@@ -52,6 +54,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
       apiKey: options.openAIApiKey,
       transcriptionModel: options.transcriptionModel ?? 'gpt-transcribe',
       parserModel: options.parserModel ?? 'gpt-6-luna',
+      logPayloads: options.logApiPayloads ?? false,
     })
     : new UnavailableVoiceAI());
   const voiceDrafts = new VoiceDraftService(repository, groups, expenses, events, voiceAI);
@@ -74,6 +77,33 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.decorate('authenticate', async function authenticate(request) {
     await request.jwtVerify();
   });
+
+  if (options.logApiPayloads) {
+    app.addHook('preHandler', async (request) => {
+      if (!request.url.startsWith('/api/')) return;
+      request.log.info({
+        requestId: request.id,
+        method: request.method,
+        url: request.url,
+        params: sanitizeForLog(request.params),
+        query: sanitizeForLog(request.query),
+        payload: request.isMultipart() ? '[multipart audio; metadata logged by voice route]' : sanitizeForLog(request.body),
+      }, 'API request payload');
+    });
+
+    app.addHook('onSend', async (request, reply, payload) => {
+      if (request.url.startsWith('/api/')) {
+        request.log.info({
+          requestId: request.id,
+          method: request.method,
+          url: request.url,
+          statusCode: reply.statusCode,
+          response: sanitizeResponsePayload(payload),
+        }, 'API response payload');
+      }
+      return payload;
+    });
+  }
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
