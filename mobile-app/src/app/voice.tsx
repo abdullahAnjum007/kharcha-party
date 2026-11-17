@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   RecordingPresets,
@@ -9,7 +9,7 @@ import {
 } from 'expo-audio';
 import { BottomNav, Card, Eyebrow, Screen, SectionTitle } from '@/components/ui';
 import { voiceLogs as demoVoiceLogs } from '@/data/mockData';
-import { reviewVoiceDraft, uploadVoiceDraft, type VoiceDraft } from '@/services/api';
+import { listVoiceDrafts, reviewVoiceDraft, uploadVoiceDraft, type VoiceDraft } from '@/services/api';
 import { useAppState } from '@/state/AppContext';
 import { colors, radii, spacing } from '@/theme';
 
@@ -25,6 +25,18 @@ export default function VoiceScreen() {
   const [error, setError] = useState('');
   const [newLogs, setNewLogs] = useState<DisplayLog[]>([]);
   const logs: DisplayLog[] = [...newLogs, ...demoVoiceLogs];
+
+  useEffect(() => {
+    if (!session) return;
+    void listVoiceDrafts({ groupId: session.groupId, token: session.token })
+      .then((response) => setNewLogs(response.data.voiceDrafts.map((item) => ({
+        id: item.id,
+        transcript: item.transcript,
+        status: item.status === 'ACCEPTED' ? 'Accepted' : item.status === 'DENIED' ? 'Denied' : 'Pending',
+        time: new Date(item.updatedAt).toLocaleString(),
+      }))))
+      .catch(() => undefined);
+  }, [session]);
 
   const uploadRecording = async (uri: string) => {
     if (!session) return;
@@ -78,6 +90,11 @@ export default function VoiceScreen() {
   };
 
   const seconds = Math.floor(recorderState.durationMillis / 1000);
+  const saveForLater = () => {
+    if (!draft) return;
+    setNewLogs((current) => [{ id: draft.id, transcript: draft.transcript, status: 'Pending', time: 'Abhi' }, ...current.filter((item) => item.id !== draft.id)]);
+    setDraft(null);
+  };
 
   return (
     <View style={styles.root}>
@@ -162,17 +179,24 @@ export default function VoiceScreen() {
                 </View>
                 <View style={styles.entryRow}>
                   <View style={styles.entryMain}>
-                    <Text style={styles.entryTitle}>{draft.title}</Text>
-                    <Text style={styles.entryMeta}>{draft.category} · Paid by {draft.memberName}</Text>
+                    <Text style={styles.entryTitle}>{draft.title ?? 'Kahan kharcha hua? ⚠️'}</Text>
+                    <Text style={styles.entryMeta}>{draft.category ?? 'Category missing'} · Paid by {draft.paidBy?.name ?? 'person missing'}</Text>
                   </View>
-                  <Text style={styles.entryAmount}>Rs. {draft.amount.toLocaleString('en-PK')}</Text>
+                  <Text style={styles.entryAmount}>{draft.amount ? `Rs. ${draft.amount.toLocaleString('en-PK')}` : 'Amount? ⚠️'}</Text>
                 </View>
+                {draft.missingFields.length ? (
+                  <View style={styles.incompleteBox}>
+                    <Text style={styles.incompleteTitle}>Kuch scene missing hai 🕵️</Text>
+                    <Text style={styles.incompleteText}>Isay abhi pending chhor dein. Owner/leader Sheet mein baad mein details edit kar sakta hai.</Text>
+                    <Pressable onPress={saveForLater} style={styles.laterButton}><Text style={styles.laterLabel}>Baad mein edit karunga →</Text></Pressable>
+                  </View>
+                ) : null}
                 {error ? <Text style={styles.error}>{error}</Text> : null}
                 <View style={styles.modalActions}>
                   <Pressable disabled={reviewing} onPress={() => void review('deny')} style={({ pressed }) => [styles.reviewButton, styles.denyButton, pressed && styles.pressed]}>
                     <Text style={styles.denyLabel}>Deny ✕</Text>
                   </Pressable>
-                  <Pressable disabled={reviewing} onPress={() => void review('accept')} style={({ pressed }) => [styles.reviewButton, styles.acceptButton, pressed && styles.pressed]}>
+                  <Pressable disabled={reviewing || draft.missingFields.length > 0} onPress={() => void review('accept')} style={({ pressed }) => [styles.reviewButton, styles.acceptButton, draft.missingFields.length > 0 && styles.disabled, pressed && styles.pressed]}>
                     {reviewing ? <ActivityIndicator color={colors.background} /> : <Text style={styles.acceptLabel}>Accept ✓</Text>}
                   </Pressable>
                 </View>
@@ -238,6 +262,11 @@ const styles = StyleSheet.create({
   entryTitle: { color: colors.white, fontSize: 17, fontWeight: '900' },
   entryMeta: { color: colors.muted, fontSize: 11, marginTop: 4 },
   entryAmount: { color: colors.lime, fontSize: 17, fontWeight: '900' },
+  incompleteBox: { padding: spacing.md, borderRadius: radii.medium, backgroundColor: '#433429', gap: spacing.xs },
+  incompleteTitle: { color: colors.orange, fontSize: 14, fontWeight: '900' },
+  incompleteText: { color: colors.white, fontSize: 11, lineHeight: 17 },
+  laterButton: { paddingVertical: spacing.sm },
+  laterLabel: { color: colors.lime, fontSize: 12, fontWeight: '900' },
   modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   reviewButton: { flex: 1, minHeight: 52, borderRadius: radii.medium, alignItems: 'center', justifyContent: 'center' },
   denyButton: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.danger },

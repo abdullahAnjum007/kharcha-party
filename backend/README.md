@@ -60,6 +60,7 @@ curl http://localhost:4000/api/v1/groups/GROUP_ID/dashboard \
 | `PATCH` | `/api/v1/groups/:groupId/expenses/:expenseId/status` | Leader approves/rejects an expense |
 | `GET/POST` | `/api/v1/groups/:groupId/voice-logs` | List or parse transcribed voice entries |
 | `GET/POST` | `/api/v1/groups/:groupId/voice-drafts` | List drafts or upload multipart audio for AI parsing |
+| `PATCH` | `/api/v1/groups/:groupId/voice-drafts/:draftId` | Creator/leader fills missing voice details |
 | `POST` | `/api/v1/groups/:groupId/voice-drafts/:draftId/accept` | Confirm draft and create the expense |
 | `POST` | `/api/v1/groups/:groupId/voice-drafts/:draftId/deny` | Discard the draft without an expense |
 | `GET` | `/api/v1/groups/:groupId/dashboard` | Aggregated dynamic dashboard |
@@ -80,7 +81,7 @@ curl -X POST http://localhost:4000/api/v1/groups/GROUP_ID/voice-drafts \
   -F 'audio=@expense.m4a;type=audio/mp4'
 ```
 
-The server transcribes the audio, extracts a title, category, and integer PKR amount, then returns a `PENDING_REVIEW` draft. No expense exists until the member calls the `accept` route. Calling `deny` records the decision but creates no expense. Audio is processed in memory and is not persisted by this prototype.
+The server transcribes the audio and extracts the title, category, integer PKR amount, and payer without inventing missing facts. Complete results return as `PENDING_REVIEW`; incomplete results return as `NEEDS_DETAILS` and remain editable by their creator or the group leader. No expense exists until a complete draft is accepted. Calling `deny` records the decision but creates no expense. Audio is processed in memory and is not persisted by this prototype.
 
 ## Commands
 

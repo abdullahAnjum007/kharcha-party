@@ -1,17 +1,27 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BottomNav, Card, Eyebrow, PrimaryButton, ProgressBar, Screen, SectionTitle } from '@/components/ui';
 import { expenses, formatRupees } from '@/data/mockData';
 import { useAppState } from '@/state/AppContext';
 import { colors, radii, spacing } from '@/theme';
+import { listVoiceDrafts } from '@/services/api';
 
 export default function HomeScreen() {
-  const { groupName, groupCode, individualBudget, demoRole, setDemoRole } = useAppState();
+  const { groupName, groupCode, individualBudget, demoRole, setDemoRole, session } = useAppState();
   const [notice, setNotice] = useState('');
+  const [pendingVoiceCount, setPendingVoiceCount] = useState(0);
   const isLeader = demoRole === 'leader';
   const spent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const totalBudget = (Number(individualBudget) || 25000) * 4;
   const progress = Math.round((spent / totalBudget) * 100);
+
+  useFocusEffect(useCallback(() => {
+    if (!session) return;
+    void listVoiceDrafts({ groupId: session.groupId, token: session.token })
+      .then((response) => setPendingVoiceCount(response.data.voiceDrafts.filter((draft) => ['NEEDS_DETAILS', 'PENDING_REVIEW'].includes(draft.status)).length))
+      .catch(() => setPendingVoiceCount(0));
+  }, [session]));
 
   return (
     <View style={styles.root}>
@@ -37,6 +47,19 @@ export default function HomeScreen() {
             ))}
           </View>
         </View>
+
+        {pendingVoiceCount > 0 ? (
+          <Pressable onPress={() => router.push('/sheet')}>
+            <Card tone="orange" style={styles.haramiAlert}>
+              <Text style={styles.haramiEmoji}>🚨</Text>
+              <View style={styles.haramiCopy}>
+                <Text style={styles.haramiTitle}>Bhai harami pan ho raha hai, Sheet par dekho.</Text>
+                <Text style={styles.haramiText}>{pendingVoiceCount} voice {pendingVoiceCount === 1 ? 'entry incomplete/pending hai' : 'entries incomplete/pending hain'}. Details fix karni hain.</Text>
+              </View>
+              <Text style={styles.haramiArrow}>→</Text>
+            </Card>
+          </Pressable>
+        ) : null}
 
         <Card tone="raised" style={styles.totalCard}>
           <Text style={styles.cardLabel}>GROUP SPENDING</Text>
@@ -69,7 +92,7 @@ export default function HomeScreen() {
             <Text style={styles.actionTitle}>{isLeader ? 'Kharcha add karo' : 'Expense request bhejo'}</Text>
             <Text style={styles.actionText}>{isLeader ? 'Type karo ya voice se bolo. “Dinner 8200, Ali ne diye.”' : 'Receipt ya amount bhejo. Leader approve karega.'}</Text>
           </View>
-          <Pressable onPress={() => setNotice(isLeader ? 'Voice entry demo ready 🎙️' : 'Request leader ko bhej di ✈️')} style={styles.roundAction}>
+          <Pressable onPress={() => isLeader ? router.push('/voice') : setNotice('Request leader ko bhej di ✈️')} style={styles.roundAction}>
             <Text style={styles.roundActionText}>→</Text>
           </Pressable>
         </Card>
@@ -125,6 +148,12 @@ const styles = StyleSheet.create({
   roleActive: { backgroundColor: colors.cardElevated },
   roleText: { fontSize: 14, opacity: 0.45 },
   roleTextActive: { opacity: 1 },
+  haramiAlert: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md },
+  haramiEmoji: { fontSize: 24 },
+  haramiCopy: { flex: 1 },
+  haramiTitle: { color: colors.background, fontSize: 14, lineHeight: 19, fontWeight: '900' },
+  haramiText: { color: '#603824', fontSize: 10, lineHeight: 15, marginTop: 3 },
+  haramiArrow: { color: colors.background, fontSize: 20, fontWeight: '900' },
   totalCard: { marginTop: spacing.sm },
   cardLabel: { color: colors.muted, fontSize: 11, letterSpacing: 1.2, fontWeight: '900' },
   totalAmount: { color: colors.white, fontSize: 36, fontWeight: '900', letterSpacing: -1.2, marginVertical: spacing.sm },

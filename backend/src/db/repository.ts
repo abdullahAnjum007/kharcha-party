@@ -53,10 +53,12 @@ export type VoiceDraftRow = {
   group_id: string;
   member_id: string;
   transcript: string;
-  title: string;
-  category: string;
-  amount: number;
-  status: 'PENDING_REVIEW' | 'ACCEPTED' | 'DENIED';
+  title: string | null;
+  category: string | null;
+  amount: number | null;
+  paid_by_member_id: string | null;
+  missing_fields: string;
+  status: 'PENDING_REVIEW' | 'NEEDS_DETAILS' | 'ACCEPTED' | 'DENIED';
   expense_id: string | null;
   created_at: string;
   updated_at: string;
@@ -229,10 +231,10 @@ export class KharchaRepository {
     this.database.raw.prepare(`
       INSERT INTO voice_drafts (
         id, group_id, member_id, transcript, title, category, amount,
-        status, expense_id, created_at, updated_at
+        paid_by_member_id, missing_fields, status, expense_id, created_at, updated_at
       ) VALUES (
         @id, @group_id, @member_id, @transcript, @title, @category, @amount,
-        @status, @expense_id, @created_at, @updated_at
+        @paid_by_member_id, @missing_fields, @status, @expense_id, @created_at, @updated_at
       )
     `).run(draft);
   }
@@ -249,6 +251,16 @@ export class KharchaRepository {
     this.database.raw.prepare(`
       UPDATE voice_drafts SET status = ?, expense_id = ?, updated_at = ? WHERE id = ?
     `).run(status, expenseId, updatedAt, id);
+  }
+
+  updateVoiceDraftDetails(draft: VoiceDraftRow) {
+    this.database.raw.prepare(`
+      UPDATE voice_drafts
+      SET title = @title, category = @category, amount = @amount,
+        paid_by_member_id = @paid_by_member_id, missing_fields = @missing_fields,
+        status = @status, updated_at = @updated_at
+      WHERE id = @id
+    `).run(draft);
   }
 
   approvedAccounting(groupId: string): {

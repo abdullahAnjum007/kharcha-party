@@ -5,17 +5,21 @@ import { AppError } from '../../lib/errors.js';
 
 const extractedExpenseSchema = z.object({
   isExpense: z.boolean(),
-  title: z.string().trim().min(1).max(80),
-  category: z.enum(['Food', 'Transport', 'Hotel', 'Shopping', 'Entertainment', 'Extra']),
-  amount: z.number().int().nonnegative(),
+  title: z.string().trim().min(1).max(80).nullable(),
+  category: z.enum(['Food', 'Transport', 'Hotel', 'Shopping', 'Entertainment', 'Extra']).nullable(),
+  amount: z.number().int().positive().nullable(),
+  paidByName: z.string().trim().min(1).max(40).nullable(),
 });
 
 export type VoiceExpenseExtraction = {
   transcript: string;
-  title: string;
+  title: string | null;
   category: z.infer<typeof extractedExpenseSchema>['category'];
-  amount: number;
+  amount: number | null;
+  paidByName: string | null;
 };
+
+export type VoiceContext = { currentMemberName: string; memberNames: string[] };
 
 export type VoiceAudio = {
   buffer: Buffer;
@@ -24,7 +28,7 @@ export type VoiceAudio = {
 };
 
 export interface VoiceAI {
-  transcribeAndExtract(audio: VoiceAudio): Promise<VoiceExpenseExtraction>;
+  transcribeAndExtract(audio: VoiceAudio, context: VoiceContext): Promise<VoiceExpenseExtraction>;
 }
 
 type OpenAIVoiceAIOptions = {
@@ -40,7 +44,7 @@ export class OpenAIVoiceAI implements VoiceAI {
     this.client = new OpenAI({ apiKey: options.apiKey });
   }
 
-  async transcribeAndExtract(audio: VoiceAudio): Promise<VoiceExpenseExtraction> {
+  async transcribeAndExtract(audio: VoiceAudio, context: VoiceContext): Promise<VoiceExpenseExtraction> {
     try {
       const transcription = await this.client.audio.transcriptions.create({
         file: await toFile(audio.buffer, audio.filename, { type: audio.mimeType }),
@@ -55,17 +59,17 @@ export class OpenAIVoiceAI implements VoiceAI {
         input: [
           {
             role: 'system',
-            content: 'You convert one Roman Urdu, Urdu, or Hinglish trip-expense sentence into a structured PKR expense. Extract the spoken total as an integer. Pick the closest allowed category. Keep title short and friendly. If it is not clearly an expense or has no positive amount, set isExpense false and amount 0.',
+            content: `You convert one Roman Urdu, Urdu, or Hinglish trip-expense sentence into one structured PKR expense draft. Current speaker is ${JSON.stringify(context.currentMemberName)}. Group members are ${JSON.stringify(context.memberNames)}. Words like "maine", "mera", or "mene" mean the current speaker. Never invent missing facts: title, category, amount, and paidByName must be null when the audio does not clearly provide them. Use a group member's exact name when identifiable. Pick the closest allowed category only when the purpose is clear. Set isExpense false only when there is no expense intent at all.`,
           },
           { role: 'user', content: transcript },
         ],
         text: { format: zodTextFormat(extractedExpenseSchema, 'expense_draft') },
       });
       const parsed = response.output_parsed;
-      if (!parsed?.isExpense || parsed.amount <= 0) {
-        throw new AppError(422, 'VOICE_NOT_UNDERSTOOD', 'Amount ya kharcha clear nahi tha. Misal: “Dinner ke 8200 maine diye”.');
+      if (!parsed?.isExpense) {
+        throw new AppError(422, 'VOICE_NOT_UNDERSTOOD', 'Kharcha clear nahi tha. Misal: “Dinner ke 8200 maine diye”.');
       }
-      return { transcript, title: parsed.title, category: parsed.category, amount: parsed.amount };
+      return { transcript, title: parsed.title, category: parsed.category, amount: parsed.amount, paidByName: parsed.paidByName };
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(502, 'VOICE_AI_FAILED', 'Voice AI abhi jawab nahi de saka. Dobara try karein.');

@@ -15,7 +15,7 @@ type Expense = { id: string; status: string; amount: number; source: string };
 
 const fakeVoiceAI: VoiceAI = {
   async transcribeAndExtract() {
-    return { transcript: 'Ali ne dinner ke 8200 diye', title: 'Dinner scene', category: 'Food', amount: 8_200 };
+    return { transcript: 'Ali ne dinner ke 8200 diye', title: 'Dinner scene', category: 'Food', amount: 8_200, paidByName: 'Ali' };
   },
 };
 
@@ -236,4 +236,66 @@ void test('validation and authentication errors use a stable API envelope', asyn
   const protectedResponse = await app.inject({ method: 'GET', url: '/api/v1/groups/40e9bca9-a483-47a7-badc-01ffb40695ad' });
   assert.equal(protectedResponse.statusCode, 401);
   assert.equal(protectedResponse.json<{ error: { code: string } }>().error.code, 'UNAUTHORIZED');
+});
+
+void test('incomplete AI voice data stays editable until all details are provided', async (context) => {
+  const incompleteVoiceAI: VoiceAI = {
+    async transcribeAndExtract() {
+      return {
+        transcript: 'Ali ne khane ke paise diye',
+        title: null,
+        category: 'Food',
+        amount: null,
+        paidByName: 'Ali',
+      };
+    },
+  };
+  const app = await buildApp({
+    databasePath: ':memory:',
+    jwtSecret: 'incomplete-voice-test-secret-is-long-enough',
+    voiceAI: incompleteVoiceAI,
+  });
+  context.after(async () => app.close());
+
+  const created = (await app.inject({
+    method: 'POST',
+    url: '/api/v1/groups',
+    payload: { name: 'Incomplete Scene', creatorName: 'Ali' },
+  })).json<{ data: { group: Group; member: Member; token: string } }>().data;
+  const auth = { authorization: `Bearer ${created.token}` };
+  const audio = audioMultipart();
+  const uploaded = await app.inject({
+    method: 'POST',
+    url: `/api/v1/groups/${created.group.id}/voice-drafts`,
+    headers: { ...auth, 'content-type': audio.contentType },
+    payload: audio.payload,
+  });
+  assert.equal(uploaded.statusCode, 201);
+  const draft = uploaded.json<{ data: { voiceDraft: { id: string; status: string; missingFields: string[] } } }>().data.voiceDraft;
+  assert.equal(draft.status, 'NEEDS_DETAILS');
+  assert.deepEqual(draft.missingFields.sort(), ['amount', 'title']);
+
+  const earlyAccept = await app.inject({
+    method: 'POST',
+    url: `/api/v1/groups/${created.group.id}/voice-drafts/${draft.id}/accept`,
+    headers: auth,
+  });
+  assert.equal(earlyAccept.statusCode, 409);
+
+  const updated = await app.inject({
+    method: 'PATCH',
+    url: `/api/v1/groups/${created.group.id}/voice-drafts/${draft.id}`,
+    headers: auth,
+    payload: { title: 'Dinner scene', amount: 5_000, paidByMemberId: created.member.id },
+  });
+  assert.equal(updated.statusCode, 200);
+  assert.equal(updated.json<{ data: { voiceDraft: { status: string; missingFields: string[] } } }>().data.voiceDraft.status, 'PENDING_REVIEW');
+
+  const accepted = await app.inject({
+    method: 'POST',
+    url: `/api/v1/groups/${created.group.id}/voice-drafts/${draft.id}/accept`,
+    headers: auth,
+  });
+  assert.equal(accepted.statusCode, 200);
+  assert.equal(accepted.json<{ data: { expense: Expense } }>().data.expense.amount, 5_000);
 });

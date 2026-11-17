@@ -1,4 +1,6 @@
 import { Platform } from 'react-native';
+import { fetch } from 'expo/fetch';
+import { File } from 'expo-file-system';
 
 const defaultApiUrl = Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? defaultApiUrl).replace(/\/$/, '');
@@ -12,12 +14,15 @@ export type VoiceDraft = {
   memberId: string;
   memberName: string;
   transcript: string;
-  title: string;
-  category: string;
-  amount: number;
-  status: 'PENDING_REVIEW' | 'ACCEPTED' | 'DENIED';
+  title: string | null;
+  category: string | null;
+  amount: number | null;
+  paidBy: { id: string; name: string } | null;
+  missingFields: string[];
+  status: 'PENDING_REVIEW' | 'NEEDS_DETAILS' | 'ACCEPTED' | 'DENIED';
   expenseId: string | null;
   createdAt: string;
+  updatedAt: string;
 };
 
 type ErrorEnvelope = { error?: { message?: string } };
@@ -48,17 +53,42 @@ export async function joinGroup(input: { groupCode: string; inviteCode: string }
 
 export async function uploadVoiceDraft(input: { uri: string; groupId: string; token: string }) {
   const form = new FormData();
-  form.append('audio', {
-    uri: input.uri,
-    name: `kharcha-${Date.now()}.m4a`,
-    type: 'audio/mp4',
-  } as unknown as Blob);
+  const audioFile = new File(input.uri);
+  form.append('audio', audioFile);
   const response = await fetch(`${API_URL}/api/v1/groups/${input.groupId}/voice-drafts`, {
     method: 'POST',
     headers: { authorization: `Bearer ${input.token}` },
     body: form,
   });
   return decode<{ data: { voiceDraft: VoiceDraft } }>(response);
+}
+
+export async function listVoiceDrafts(input: { groupId: string; token: string }) {
+  const response = await fetch(`${API_URL}/api/v1/groups/${input.groupId}/voice-drafts`, {
+    headers: { authorization: `Bearer ${input.token}` },
+  });
+  return decode<{ data: { voiceDrafts: VoiceDraft[] } }>(response);
+}
+
+export async function updateVoiceDraft(input: {
+  groupId: string;
+  draftId: string;
+  token: string;
+  details: { title: string | null; category: string | null; amount: number | null; paidByMemberId: string | null };
+}) {
+  const response = await fetch(`${API_URL}/api/v1/groups/${input.groupId}/voice-drafts/${input.draftId}`, {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${input.token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(input.details),
+  });
+  return decode<{ data: { voiceDraft: VoiceDraft } }>(response);
+}
+
+export async function getGroup(input: { groupId: string; token: string }) {
+  const response = await fetch(`${API_URL}/api/v1/groups/${input.groupId}`, {
+    headers: { authorization: `Bearer ${input.token}` },
+  });
+  return decode<{ data: { group: ApiGroup & { leaderId: string | null }; members: ApiMember[] } }>(response);
 }
 
 export async function reviewVoiceDraft(input: { groupId: string; draftId: string; token: string; decision: 'accept' | 'deny' }) {

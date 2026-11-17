@@ -116,15 +116,18 @@ export class Database {
         group_id TEXT NOT NULL,
         member_id TEXT NOT NULL,
         transcript TEXT NOT NULL,
-        title TEXT NOT NULL,
-        category TEXT NOT NULL,
-        amount INTEGER NOT NULL CHECK(amount > 0),
-        status TEXT NOT NULL CHECK(status IN ('PENDING_REVIEW', 'ACCEPTED', 'DENIED')),
+        title TEXT,
+        category TEXT,
+        amount INTEGER CHECK(amount IS NULL OR amount > 0),
+        paid_by_member_id TEXT,
+        missing_fields TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL CHECK(status IN ('PENDING_REVIEW', 'NEEDS_DETAILS', 'ACCEPTED', 'DENIED')),
         expense_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
         FOREIGN KEY (member_id) REFERENCES members(id),
+        FOREIGN KEY (paid_by_member_id) REFERENCES members(id),
         FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE SET NULL
       );
       CREATE INDEX IF NOT EXISTS idx_voice_drafts_group ON voice_drafts(group_id, created_at DESC);
@@ -135,5 +138,44 @@ export class Database {
       this.raw.exec('ALTER TABLE members ADD COLUMN invite_code_hash TEXT');
     }
     this.raw.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_members_group_invite_code ON members(group_id, invite_code_hash)');
+
+    const voiceDraftColumns = this.raw.pragma('table_info(voice_drafts)') as Array<{ name: string; notnull: 0 | 1 }>;
+    if (voiceDraftColumns.some((column) => column.name === 'amount' && column.notnull === 1)) {
+      this.raw.pragma('foreign_keys = OFF');
+      this.raw.exec(`
+        BEGIN IMMEDIATE;
+        CREATE TABLE voice_drafts_v2 (
+          id TEXT PRIMARY KEY,
+          group_id TEXT NOT NULL,
+          member_id TEXT NOT NULL,
+          transcript TEXT NOT NULL,
+          title TEXT,
+          category TEXT,
+          amount INTEGER CHECK(amount IS NULL OR amount > 0),
+          paid_by_member_id TEXT,
+          missing_fields TEXT NOT NULL DEFAULT '[]',
+          status TEXT NOT NULL CHECK(status IN ('PENDING_REVIEW', 'NEEDS_DETAILS', 'ACCEPTED', 'DENIED')),
+          expense_id TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+          FOREIGN KEY (member_id) REFERENCES members(id),
+          FOREIGN KEY (paid_by_member_id) REFERENCES members(id),
+          FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE SET NULL
+        );
+        INSERT INTO voice_drafts_v2 (
+          id, group_id, member_id, transcript, title, category, amount,
+          paid_by_member_id, missing_fields, status, expense_id, created_at, updated_at
+        )
+        SELECT id, group_id, member_id, transcript, title, category, amount,
+          member_id, '[]', status, expense_id, created_at, updated_at
+        FROM voice_drafts;
+        DROP TABLE voice_drafts;
+        ALTER TABLE voice_drafts_v2 RENAME TO voice_drafts;
+        CREATE INDEX idx_voice_drafts_group ON voice_drafts(group_id, created_at DESC);
+        COMMIT;
+      `);
+      this.raw.pragma('foreign_keys = ON');
+    }
   }
 }
