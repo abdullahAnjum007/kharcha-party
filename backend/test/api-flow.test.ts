@@ -23,7 +23,7 @@ function audioMultipart() {
   const boundary = '----kharcha-party-test-boundary';
   const payload = Buffer.concat([
     Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="audio"; filename="expense.m4a"\r\nContent-Type: audio/mp4\r\n\r\n`),
-    Buffer.from('fake-audio-for-provider'),
+    Buffer.alloc(2_000, 1),
     Buffer.from(`\r\n--${boundary}--\r\n`),
   ]);
   return { payload, contentType: `multipart/form-data; boundary=${boundary}` };

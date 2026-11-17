@@ -33,10 +33,13 @@ export async function registerVoiceRoutes(app: FastifyInstance, services: Servic
     const file = await request.file();
     if (!file) throw new AppError(400, 'AUDIO_REQUIRED', 'Audio file required hai.');
     if (!file.mimetype.startsWith('audio/')) throw new AppError(415, 'INVALID_AUDIO_TYPE', 'Sirf audio file upload karein.');
+    const buffer = await file.toBuffer();
+    request.log.info({ groupId, memberId: request.user.memberId, filename: file.filename, mimeType: file.mimetype, bytes: buffer.length }, 'Voice audio received');
+    if (buffer.length < 1_000) throw new AppError(422, 'AUDIO_TOO_SHORT', 'Recording bohat choti ya empty hai. Kam az kam 2-3 seconds bol kar try karein.');
     const voiceDraft = await services.voiceDrafts.create(groupId, request.user.memberId, {
-      buffer: await file.toBuffer(),
-      filename: file.filename || 'expense.m4a',
-      mimeType: file.mimetype,
+      buffer,
+      filename: 'expense.m4a',
+      mimeType: 'audio/mp4',
     });
     request.log.info({ groupId, memberId: request.user.memberId, voiceDraftId: voiceDraft.id, status: voiceDraft.status }, 'Voice draft created');
     return reply.code(201).send({ data: { voiceDraft } });

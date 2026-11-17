@@ -46,12 +46,14 @@ export class OpenAIVoiceAI implements VoiceAI {
 
   async transcribeAndExtract(audio: VoiceAudio, context: VoiceContext): Promise<VoiceExpenseExtraction> {
     try {
+      console.info('[voice-ai] transcription started', { filename: audio.filename, mimeType: audio.mimeType, bytes: audio.buffer.length });
       const transcription = await this.client.audio.transcriptions.create({
         file: await toFile(audio.buffer, audio.filename, { type: audio.mimeType }),
         model: this.options.transcriptionModel,
         prompt: 'Roman Urdu, Urdu aur Hinglish trip expense. Names aur PKR amounts bilkul sahi likho.',
       });
       const transcript = transcription.text.trim();
+      console.info('[voice-ai] transcription completed', { characters: transcript.length });
       if (!transcript) throw new AppError(422, 'VOICE_NOT_UNDERSTOOD', 'Audio mein koi clear baat samajh nahi aayi. Dobara bol kar try karein.');
 
       const response = await this.client.responses.parse({
@@ -66,12 +68,29 @@ export class OpenAIVoiceAI implements VoiceAI {
         text: { format: zodTextFormat(extractedExpenseSchema, 'expense_draft') },
       });
       const parsed = response.output_parsed;
+      console.info('[voice-ai] expense extraction completed', { hasResult: Boolean(parsed), isExpense: parsed?.isExpense ?? false });
       if (!parsed?.isExpense) {
         throw new AppError(422, 'VOICE_NOT_UNDERSTOOD', 'Kharcha clear nahi tha. Misal: “Dinner ke 8200 maine diye”.');
       }
       return { transcript, title: parsed.title, category: parsed.category, amount: parsed.amount, paidByName: parsed.paidByName };
     } catch (error) {
       if (error instanceof AppError) throw error;
+      if (error instanceof OpenAI.APIError) {
+        const apiError = error as unknown as { status?: unknown; code?: unknown; type?: unknown; message?: unknown; requestID?: unknown };
+        const status = typeof apiError.status === 'number' ? apiError.status : undefined;
+        console.error('[voice-ai] OpenAI request failed', {
+          status,
+          code: typeof apiError.code === 'string' ? apiError.code : undefined,
+          type: typeof apiError.type === 'string' ? apiError.type : undefined,
+          message: typeof apiError.message === 'string' ? apiError.message : 'Unknown OpenAI error',
+          requestId: typeof apiError.requestID === 'string' ? apiError.requestID : undefined,
+        });
+        if (status === 429) throw new AppError(503, 'VOICE_AI_QUOTA', 'OpenAI credits ya rate limit ka issue hai. Billing/usage check karein.');
+        if (status === 401 || status === 403) throw new AppError(503, 'VOICE_AI_AUTH', 'OpenAI API key ya permissions valid nahi hain.');
+        if (status === 400) throw new AppError(422, 'VOICE_AUDIO_INVALID', 'Recorded audio format samajh nahi aaya. Thora clear aur 2-3 seconds se zyada bol kar try karein.');
+      } else {
+        console.error('[voice-ai] unexpected failure', error);
+      }
       throw new AppError(502, 'VOICE_AI_FAILED', 'Voice AI abhi jawab nahi de saka. Dobara try karein.');
     }
   }
